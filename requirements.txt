@@ -1,7 +1,10 @@
 fastapi
 uvicorn
-requests
-python-dotenv
-PyPDF2
 python-multipart
-
+PyPDF2
+python-docx
+sentence-transformers
+faiss-cpu
+python-dotenv
+requests
+email  

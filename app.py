@@ -1,14 +1,14 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from utils import extract_text_from_file, ask_openrouter
+from utils import extract_text_from_file, ask_openrouter, send_to_hackrx
 
 app = FastAPI()
 
 # Enable CORS (for external frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, set specific origins
+    allow_origins=["*"],  # In production, restrict
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,14 +24,12 @@ async def main():
         <title>Legal Document Q&A</title>
     </head>
     <body>
-        <h2>Upload Legal Document (.pdf, .docx, .eml) and Ask Questions</h2>
+        <h2>Upload Legal Document and Ask Questions</h2>
         <form action="/ask" method="post" enctype="multipart/form-data">
-            <label for="file">Upload Document:</label><br>
-            <input type="file" id="file" name="file" accept=".pdf,.docx,.eml" required><br><br>
-
-            <label for="question">Questions (one per line):</label><br>
-            <textarea id="question" name="question" rows="10" cols="80" placeholder="Write each question on a new line..." required></textarea><br><br>
-
+            <label>Upload Document:</label><br>
+            <input type="file" name="file" required><br><br>
+            <label>Questions (one per line):</label><br>
+            <textarea name="question" rows="10" cols="80" required></textarea><br><br>
             <input type="submit" value="Ask">
         </form>
     </body>
@@ -40,39 +38,36 @@ async def main():
 
 # Q&A Processing
 @app.post("/ask")
-async def ask_question(
-    file: UploadFile = File(...),
-    question: str = Form(...),
-):
+async def ask_question(file: UploadFile = File(...), question: str = Form(...)):
     try:
-        # ✅ Extract content from any supported file type
         text = extract_text_from_file(file)
-
-        # Call OpenRouter with the document text and questions
         response_dict = ask_openrouter(text, question)
+        return JSONResponse(content=response_dict)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
-        # Format result as readable HTML
-        formatted_response = "<h2>Response:</h2>"
-        for key, value in response_dict.items():
-            formatted_response += f"<h3>{key}</h3>"
+# Webhook for HackRx to call us
+@app.post("/webhook")
+async def webhook(request: Request):
+    """
+    HackRx will send us JSON: { "documents": "url", "questions": [...] }
+    We'll process and return the answers.
+    """
+    try:
+        data = await request.json()
+        doc_url = data.get("documents")
+        questions = data.get("questions", [])
+        hackrx_response = send_to_hackrx(doc_url, questions)
+        return JSONResponse(content=hackrx_response)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
-            if isinstance(value, list):
-                formatted_response += "<ul>"
-                for item in value:
-                    formatted_response += f"<li>{item}</li>"
-                formatted_response += "</ul>"
-
-            elif isinstance(value, dict):
-                formatted_response += "<ul>"
-                for subkey, subval in value.items():
-                    formatted_response += f"<li><strong>{subkey}:</strong> {subval}</li>"
-                formatted_response += "</ul>"
-
-            else:
-                formatted_response += f"<p>{value}</p>"
-
-        formatted_response += "<br><a href='/'>Ask More Questions</a>"
-        return HTMLResponse(content=formatted_response)
-
+# Optional: endpoint to send to HackRx manually
+@app.post("/send_to_hackrx")
+async def send_to_hackrx_api(document_url: str = Form(...), questions: str = Form(...)):
+    try:
+        questions_list = [q.strip() for q in questions.split("\n") if q.strip()]
+        resp = send_to_hackrx(document_url, questions_list)
+        return JSONResponse(content=resp)
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)

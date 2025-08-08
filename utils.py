@@ -19,6 +19,9 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # Constants
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+HACKRX_BASE_URL = os.getenv("HACKRX_BASE_URL")
+HACKRX_BEARER = os.getenv("HACKRX_BEARER")
+
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_CHARS = 500_000
 CHUNK_SIZE = 500  # characters
@@ -120,3 +123,26 @@ Respond in a clean JSON with key "Q{idx+1}".
             responses[f"Q{idx+1}"] = str(e)
 
     return responses
+
+# ------------------------------------
+# 📡 Call HackRx API
+# ------------------------------------
+def send_to_hackrx(document_url, questions_list):
+    """
+    Calls HackRx API with given document URL and list of questions.
+    """
+    url = f"{HACKRX_BASE_URL}/hackrx/run"
+    headers = {
+        "Authorization": f"Bearer {HACKRX_BEARER}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    payload = {
+        "documents": document_url,
+        "questions": questions_list
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    try:
+        return response.json()
+    except:
+        return {"error": response.text}
